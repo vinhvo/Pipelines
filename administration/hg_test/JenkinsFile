@@ -1,0 +1,24 @@
+def names = nodeNames()
+def branches = [:]
+
+for (int i=0; i<names.size(); ++i) {
+    def nodeName = names[i];
+    
+    branches["node_" + nodeName] = {
+        timestamps {
+            node(nodeName) {
+                stage("Test on " + nodeName) {
+                    checkout([$class: 'MercurialSCM', credentialsId: '7f34684a-afd3-480f-8c35-746727cd542c', installation: 'latest(no cache)', source: 'https://vge1hg.gemalto.com/hg/IT_Monitoring', disableChangeLog: true])
+                    cleanWs()
+                }
+            }
+        }
+    }
+}
+
+parallel branches
+
+@NonCPS
+def nodeNames() {
+    return jenkins.model.Jenkins.instance.nodes.findAll { node -> computer = node.toComputer(); computer?.isOnline() && computer?.getChannel() != null }.collect { node -> node.name }
+}

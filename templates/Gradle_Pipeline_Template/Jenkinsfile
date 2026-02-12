@@ -1,0 +1,307 @@
+pipeline {
+    parameters {
+        // *** In this section you can add strings,booleanParam and modify choices for execution node ***
+        choice(choices: ['PRGJENKINSWIN7', 'PRG-Jenkins04','PRG-Jenkins05','PRGJENKINSW10','PRG-Jenkins01','PRG-Jenkins03'], description: 'Choose the agent to execute build', name: 'execution_node')
+        password(name: 'KEYSTORE_PASSWORD', defaultValue: '3SjMEhVQVr', description: 'Password of the keystore')
+        password(name: 'KEY_PASSWORD', defaultValue: 'EJm7g9b7e7', description: 'Password of the signature key')
+        text(name: 'KEY_ALIAS', defaultValue: 'KeyFastIDv2', description: 'Key to use to sign the APK')
+        booleanParam(name: 'SONAR', defaultValue: true, description: 'Run Sonarqube scan')
+        booleanParam(name: 'FORTIFY', defaultValue: true, description: 'Run Fortify scan')
+        booleanParam(name: 'RELEASE', defaultValue: false, description: "Set to 'true' to explicitly trigger Release build deploy on Nexus")
+        booleanParam(name: 'SNAPSHOT', defaultValue: false, description: "Set to 'true' to explicitly trigger SNAPSHOT build deploy on Nexus")
+        booleanParam(name: 'NEXUSIQ', defaultValue: true, description: 'Run Nexus IQ scan')
+        booleanParam(name: 'DOCKER', defaultValue: false, description: "Set to 'true' to explicitly trigger DOCKER BUILD and deploy image on DockerHub")
+        booleanParam(name: 'SOAPUI', defaultValue: false, description: 'Run Stage : Integration Test SOAPUI')
+		booleanParam(name: 'CLAMAV', defaultValue: false, description: 'Run Stage : CLAMAV Antivirus scan')
+    }
+    agent { label "${execution_node}" }
+    tools {
+        // Please use gradle and java version based on your project
+        gradle '5.6.4'
+        jdk 'JDK 8u271'
+    }
+    options
+            {
+                timestamps()
+                skipDefaultCheckout()
+                buildDiscarder(logRotator(numToKeepStr: '5', artifactNumToKeepStr: '1'))
+            }
+    environment
+            {
+
+                //Gradle_Pipeline_Template Parameters
+                GRADLE_USER_HOME = "d:\\"
+                GRADLE = tool name: '5.6.4', type: 'hudson.plugins.gradle.GradleInstallation'
+                PATH = "${PATH};${GRADLE}"
+
+                //Repository parameters
+                REPOSITORY_URL = 'https://vge1hg.gemalto.com/hg/_10544' //Change to yours
+                REPOSITORY_BRANCH = 'feature/credence'  //Change to yours
+                REPOSITORY_CREDS = '7f34684a-afd3-480f-8c35-746727cd542c'  //No need to change
+
+                //Fortify parameters
+                FORTIFY_PROJECT_NAME = 'GWK20001_Grd_Pipeline'  //Change to yours and be careful Fortify is case sensitive
+                FORTIFY_PROJECT_VERSION = '1.0.0'  //Change to yours
+                FORTIFY_FPR_FILE = 'DGSN_FASTID_FORTIFY.fpr'     //Change to yours
+                FORTIFY_UPLOAD_TOKEN = credentials('ea1781da-b06a-4713-9e50-0514d2396df0')    //No need to change
+                FORTIFY_SERVER = 'https://vge1fortify.gemalto.com/ssc'      //No need to change
+				SCA_UPLOAD = 'GWK20001_Mvn_Pipeline@1.0.0.mbs'              // app-name@vers-name.mbs>: --> name of the application and of the version defined on the SSC server
+
+                //NexusIQ parameters
+                NEXUSIQ_APPID = 'GWK20001_Mvn_Pipeline'      //Change to yours
+                NEXUSIQ_USER = 'ibs_automation'      //No need to change
+                NEXUSIQ_GENERIC_SECRET_POWERSHELL = credentials('0c2e2067-87a9-4f12-8c20-6923367a0d09')     //No need to change
+
+
+                //Sonar parameters
+                SONAR_PROJECT_KEY = 'com.gemalto.ics.GWK20001_Grd_Pipeline'     //Change to yours but be careful to REGEX (keep com.gemalto.ics.xxx)
+                SONAR_TOKEN = credentials('af5d14f5-524c-4b96-9dac-3d17960a32ec')     //No need to change
+                SONAR_HOST = 'https://vge1sonar.gemalto.com'     //No need to change
+
+                //Mail Parameters  -- You can add more recipients in this section with comma --
+                MAIL_RECIPIENTS = 'tural.aliyev@external.thalesgroup.com'
+
+                //Docker parameters
+                url = "dockerhub.gemalto.com"   //No need to change
+                registryCredential = '0884a94d-4f0b-4d77-9781-51ca63a9d3f7'  // No need to change
+                dockerImage = ''     //No need to change
+
+                //SoapUi
+                SoapUI = tool name: 'SoapUI', type: 'com.cloudbees.jenkins.plugins.customtools.CustomTool'
+
+
+            }
+
+    stages
+            {
+                // *** Checkout with Mercurial (Remove this stage if you are using GIT ) ***
+                stage('Initialization') {
+                    steps {
+                        println "******************************** $STAGE_NAME ********************************"
+                        execute "dir"
+                        script { currentBuild.displayName = currentBuild.displayName + " - ${execution_node}" }
+                        deleteDir()
+                        println "******************************** Checkout Repository ********************************"
+                        checkout(
+                                changelog: false,
+                                poll: false,
+                                scm: [$class       : 'MercurialSCM',
+                                      credentialsId: """${REPOSITORY_CREDS}""",
+                                      installation : 'latest',
+                                      revision     : """${REPOSITORY_BRANCH}""",
+                                      source       : """${REPOSITORY_URL}"""]
+                        )
+
+                    }
+                }
+				
+	
+				// *** Checkout with GIT *** (Remove this stage if you are using Mercurial )
+			    stage('Initialization') {
+					steps {
+						println "******************************** $STAGE_NAME ********************************"
+						execute "dir"
+                        script { currentBuild.displayName = currentBuild.displayName + " - ${execution_node}" }
+                        deleteDir()
+						println "******************************** Checkout Repository ********************************"
+						checkout(
+                        changelog: false,
+                        poll: false,
+                        scm: [$class: 'GitSCM',
+                                branches: [[name: "${REPOSITORY_BRANCH}"]],
+                                userRemoteConfigs: [[credentialsId: """${REPOSITORY_CREDS}""", url: "${REPOSITORY_URL}"]],
+                                browser: [$class: 'RhodeCode', url: "${REPOSITORY_URL}"],
+                                clean: false
+                         ]
+                        )
+                    }
+                }
+				
+			
+
+                stage('Build and Test') {
+                    steps {
+                        println "******************************** $STAGE_NAME ********************************"
+                        // Can be added also Unit tests Jacoco
+                        execute "gradle clean build assemble test"
+                    }
+
+                }
+
+                stage('Sonarqube') {
+                    when {
+                        expression { params.SONAR == true }
+                    }
+                    steps {
+                        withSonarQubeEnv('La Ciotat')
+                                {
+                                    println "******************************** $STAGE_NAME ********************************"
+                                    //Running sonar
+                                    execute "${GRADLE}\\bin\\gradle.bat clean sonarqube -Dsonar.projectKey=\"${SONAR_PROJECT_KEY}\" -Dsonar.host.url=\"${SONAR_HOST}\""
+
+                                }
+                    }
+                }
+
+
+                stage('Fortify') {
+                    when {
+                        expression { params.FORTIFY == true }
+                    }
+                    steps {
+                        println "******************************** $STAGE_NAME ********************************"
+                        execute "sourceanalyzer -b \"${FORTIFY_PROJECT_NAME}\" -clean"
+                        execute "sourceanalyzer -Dfortify.sca.source.version=1.8 -b \"${FORTIFY_PROJECT_NAME}\""
+                        execute "gradle -b %WORKSPACE%\\build.gradle assembleDebug "
+                        execute "sourceanalyzer -b \"${FORTIFY_PROJECT_NAME}\" -scan -f ${FORTIFY_FPR_FILE}"
+                        execute "fortifyclient uploadFPR -f ${FORTIFY_FPR_FILE} -project ${FORTIFY_PROJECT_NAME} -version 1.0.0 -url ${FORTIFY_SERVER} -authtoken ${FORTIFY_UPLOAD_TOKEN}"
+
+						// if your Fortify scan is taking too much time, you can move the scan on the SCA server directly
+						//Sca Upload for linux use : 'scp' instead of 'D:\\pscp.exe'
+                        //execute "D:\\pscp.exe -P 22 -hostkey 8f:54:2d:11:01:cb:38:f4:bf:f2:b6:ce:3b:c2:c0:dc -pw scaupload ${SCA_UPLOAD} scaupload@vge1sca.gemalto.com:${SCA_UPLOAD}"
+                    }
+                }
+
+
+                /*  For the time being, Nexus IQ is not able to scan apk files, due to the minification of the code by Dalvik process.
+                Here is an article from Sonatype to allow to scan Android apps before their minification with Gradle_Pipeline_Template:
+                https://community.sonatype.com/t/how-to-scan-android-for-vulnerabilities/71 */
+
+                stage('NexusIQ') {
+                    when {
+                        expression { params.NEXUSIQ == true }
+                    }
+                    steps {
+                        println "******************************** $STAGE_NAME ********************************"
+                        // Please find below example on how to use it in Msbuild and Maven projects
+                        //nexusPolicyEvaluation iqApplication: "${NEXUSIQ_APPID}", iqScanPatterns: [[scanPattern: '**/*.zip'], [scanPattern: 'tools/**/*.jar']],
+                                //iqStage: 'build'
+
+                        /* To Run ISL analysis uncomment this
+                        echo "********************************Run ISL analysis ********************************"
+                        // Please refer to confluence documentation for ISL script https://confluence.gemalto.com/display/ICSKS/ISL+automation+module
+                        powershell returnStdout: true, script: '''
+							$InformationPreference = "Continue";
+						Invoke-OssRequestsRegistration -userCredentials (New-Object System.Management.Automation.PSCredential ("$env:NEXUSIQ_USER", (ConvertTo-SecureString "$env:NEXUSIQ_GENERIC_SECRET_POWERSHELL_PSW" -AsPlainText -Force))) -jsonFilesFolder "./Isl"
+						''' */
+                    }
+                }
+				
+				 // *** For ClamAv usage please refer to this page: https://docs.clamav.net/manual/Usage.html?highlight=usage#usage
+				stage('CLAMAV') {
+					when {
+						expression { params.CLAMAV == true }
+						}
+					steps {
+						echo "********************************Run CLAMAV Antivirus********************************"
+						execute "clamscan -r %WORKSPACE%\\* > ClamScanResults.txt"
+                
+					}		
+				}
+
+                stage('Upload Snapshot on Nexus') {
+                    when {
+                        expression { params.SNAPSHOT == true }
+                    }
+                    steps {
+                        println "******************************** $STAGE_NAME ********************************"
+                        // Target should be in gradle.build file ${MAVEN_DC_SNAPSHOTS}
+                        execute "gradle clean build publish"
+                    }
+
+                }
+
+                stage('Build Release') {
+                    when {
+                        expression { params.RELEASE == true }
+                    }
+                    steps {
+                        println "******************************** $STAGE_NAME ********************************"
+                        execute "gradle assembleRelease"
+                    }
+
+                }
+
+                stage('Deploy on Docker') {
+                    when {
+                        expression { params.DOCKER == true }
+						}
+                    steps {
+
+                            //build image and publish to dockerHUB
+                            step([$class                     : 'DockerBuilderPublisher',
+                                  cleanImages                : true,
+                                  cleanupWithJenkinsJobDelete: true,
+                                  cloud                      : 'docker-prg01',
+                                  dockerFileDirectory        : '.',
+                                  fromRegistry               : ["url": "${url}", "credentialsId": "${registryCredential}"],
+                                  pushCredentialsId          : """${registryCredential}""",
+                                  pushOnSuccess              : true, 
+                                  tagsString                 : "${url}/ics_jenkins/myapp$BUILD_NUMBER:latest"          //myapp--> your project name and tag latest can be changed
+                            ])
+
+                            // run container
+                            step([$class: 'DockerBuilderControl',
+                                  option: [$class           : 'DockerBuilderControlOptionRun',
+                                           cloudName        : 'docker-prg01',
+                                           pullCredentialsId: """${registryCredential}""",
+                                           image            : "${url}/ics_jenkins/myapp$BUILD_NUMBER:latest",            //myapp--> your project name and tag latest can be changed
+                                           //dockerCommand: "--name devops-con",
+                                           bindPorts        : "8080:8080" // Change it please with Jenkins admin first
+                                  ]])
+
+                            // Stop container --> Container needed to stop manually on Jenkins node by Jenkins Admin. 
+
+                        }
+                    }
+
+                    // *** In this stage you need to use arguments for testrunner ***
+                    stage('Integration Tests SOAPUI') {
+                        when {
+                            expression { params.SOAPUI == true }
+                        }
+                        steps {
+                            echo "******************************** Integration Test Trigger ********************************"
+                            // Please use your own arguments for testrunner like PServiceEndpoint or other's ...
+                            //execute  "set _JAVA_OPTIONS= -Xms128m -Xmx256m -Dsoapui.properties=soapui.properties"
+                            // execute "${SoapUI}\\testrunner -M -r -PServiceEndpoint=http://Nor3-Docker02:8097/mockCalculatorSoap -f \"SoapUI_Reports\" -s \"TestSuite 1\" -c \"Add\" \"C:\\app\\calculator-soapui-project.xml\""
+
+                        }
+                    }
+
+                    stage('Upload Release on Nexus') {
+                        when {
+                            expression { params.RELEASE == true }
+                        }
+                        steps {
+                            println "******************************** $STAGE_NAME ********************************"
+                            // Target should be in gradle.build file ${MAVEN_DC_RELEASES}
+                            execute "gradle clean build publish"
+                        }
+
+                    }
+
+
+                }
+                post {
+                    always
+                            {
+                                step([$class: 'Mailer', recipients: "${MAIL_RECIPIENTS}", sendToIndividuals: true])
+                            }
+                }
+            }
+
+// No need to change
+def execute(cmd)
+{
+    if (isUnix())
+    {
+        sh cmd
+    }
+    else
+    {
+        bat cmd
+    }
+}
+
+cabis7@232

@@ -1,0 +1,26 @@
+pipeline {
+    agent none
+    stages {
+        stage ('Test NPM') {
+            agent any
+            steps {
+                script {
+                    withEnv(["PATH+NPM=${tool name: 'LTS', type: 'nodejs'}"]) {
+                        def execute = 'npm install grunt'
+                        def buildResult = 0
+                        if (isUnix()) {
+                            buidlResult = sh returnStatus: true, script: execute
+                        } 
+                        else {
+                            buidlResult = bat returnStatus: true, script: execute
+                        }
+
+                        if (buidlResult > 0) {
+                            currentBuild.result = 'FAILURE'
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

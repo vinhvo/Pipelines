@@ -1,0 +1,33 @@
+def names = nodeNames()
+def branches = [:]
+
+for (int i=0; i<names.size(); ++i) {
+    def nodeName = names[i];
+    
+    branches["node_" + nodeName] = {
+        timestamps {
+            node(nodeName) {
+                timeout(time: 1, unit: 'MINUTES') {
+                    stage("Test connection " + nodeName) {
+                        if (isUnix()) {
+                            sh("curl dockerhub.gemalto.com:443 --insecure >NULL && touch ${node_name}.ok || touch ${node_name}.fail")
+                        } 
+                        else {
+                            bat("curl dockerhub.gemalto.com:443 --insecure >NUL && echo \"\" > %node_name%.ok || echo > %node_name%.fail")
+                        }
+                    }
+                }
+                
+                archiveArtifacts '*.ok,*.fail'
+                cleanWs()
+            }
+        }
+    }
+}
+
+parallel branches
+
+@NonCPS
+def nodeNames() {
+    return jenkins.model.Jenkins.instance.nodes.findAll { node -> computer = node.toComputer(); computer?.isOnline() && computer?.getChannel() != null }.collect { node -> node.name }
+}

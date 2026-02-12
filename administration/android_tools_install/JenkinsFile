@@ -1,0 +1,88 @@
+def names = nodeNames()
+def branches = [:]
+
+properties([parameters([
+text(
+    defaultValue: '''ndk-bundle
+platform-tools
+build-tools;26.0.1
+build-tools;26.0.2
+build-tools;25.0.2
+build-tools;27.0.3
+build-tools;28.0.3
+build-tools;29.0.2
+build-tools;30.0.2
+build-tools;30.0.3
+build-tools;33.0.2
+platforms;android-10
+platforms;android-15
+platforms;android-22
+platforms;android-23
+platforms;android-25
+platforms;android-26
+platforms;android-27
+platforms;android-28
+platforms;android-29
+platforms;android-30
+platforms;android-33''',
+    description: 'List of tools to be installed/updated.', 
+    name: 'packages'), 
+booleanParam(
+    defaultValue: false, 
+    description: 'Complete reinstall of all tools.',
+    name: 'reinstall'), 
+text(
+    defaultValue: 'r17c', 
+    description: 'Custom NDK versions to be installed.', 
+    name: 'ndks')
+])])
+
+for (int i=0; i<names.size(); ++i) {
+    def nodeName = names[i];
+    
+    branches["node_" + nodeName] = {
+        timestamps {
+            node(nodeName) {
+                timeout(time: 5, unit: 'HOURS') {
+                    stage("Installing Android_Tools on " + nodeName) {
+                        withEnv(["PATH+JDK=${tool name: 'JDK 8u271', type: 'jdk'}/bin",'JAVA_TOOL_OPTIONS=']) {
+                            def statusCode = 0
+                            try {
+                                if(isUnix())
+                                {
+                                    throw "The script does not support unix systems yet!"
+                                }
+
+                                checkout scm
+
+                                def toolsToInstall = params.packages.readLines()
+                                def toolsToInstallStr = '\'' + toolsToInstall.join('\', \'') + '\''
+
+                                def ndksToInstall = params.ndks.readLines()
+                                def ndksToInstallStr = '\'' + ndksToInstall.join('\', \'') + '\''
+
+                                def force = params.reinstall ? '-Force' : ''
+
+                                statusCode = bat "powershell -ExecutionPolicy Bypass -Command \"& %WORKSPACE%\\administration\\android_tools_install\\installAndroidTools.ps1 -toolLocation \"%BASE%Android_Tools\" -packagesToInstall @($toolsToInstallStr) -customNdkVersions @($ndksToInstallStr) -proxy \$(New-Object System.Net.WebProxy(\\\"http://10.43.216.8:8080\\\",\$true)) $force\""
+                            }
+                            finally {
+                                cleanWs()
+                            }  
+
+                            if (statusCode > 0) {
+                                currentBuild.result = 'FAILURE'
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+parallel branches
+
+@NonCPS
+def nodeNames() {
+    return jenkins.model.Jenkins.instance.nodes.findAll { node -> computer = node.toComputer()?.getChannel() != null }.findAll{ it.labelString.contains "Android_Tools" }.collect { node -> node.name }
+}

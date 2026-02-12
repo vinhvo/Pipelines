@@ -1,0 +1,36 @@
+def names = nodeNames()
+def branches = [:]
+
+for (int i=0; i<names.size(); ++i) {
+    def nodeName = names[i];
+    
+    branches["node_" + nodeName] = {
+        timestamps {
+            node(nodeName) {
+                stage("Test on " + nodeName) {
+                    withEnv(["JAVA_TOOL_OPTIONS=${env.GTO_SSL_OPTS}"]) {
+                        bat 'fortifyupdate -showInstalledRules > ' + nodeName + '_before.log'
+                        
+                        def statusCode = bat returnStatus: true, script:'fortifyupdate -acceptKey > ' + nodeName + '_update.log'
+        
+                        bat 'fortifyupdate -showInstalledRules > ' + nodeName + '_after.log'
+        
+                        archiveArtifacts '**/*.log'
+                        
+                        if (statusCode > 0) {
+                            currentBuild.result = 'FAILURE'
+                        }
+                        cleanWs()
+                    }
+                }
+            }
+        }
+    }
+}
+
+parallel branches
+
+@NonCPS
+def nodeNames() {
+    return jenkins.model.Jenkins.instance.nodes.findAll { node -> computer = node.toComputer()?.getChannel() != null }.findAll{ it.labelString.contains "Fortify" }.collect { node -> node.name }
+}
